@@ -19,15 +19,32 @@
 #
 # pip install python-rtmidi
 # pip install mido
-#
+# 
 
 import os
 import time
-import mido
+try:
+    import mido
+except ModuleNotFoundError:
+    import MockedMido
+    print("Can't find mido so outputting to file")
+    mido = MockedMido.MockedMido()
 
-GETFEEDBACK_API_KEY = os.environ["GETFEEDBACK_API_KEY"]
-GETFEEDBACK_SURVEY_ID = os.environ["GETFEEDBACK_SURVEY_ID"]
-ALL_FI_TARGET_PORT = os.environ["ALL_FI_TARGET_PORT"]
+
+try:
+    GETFEEDBACK_API_KEY = os.environ["GETFEEDBACK_API_KEY"]
+except KeyError:
+    GETFEEDBACK_API_KEY = ''
+
+try:
+    GETFEEDBACK_SURVEY_ID = os.environ["GETFEEDBACK_SURVEY_ID"]
+except KeyError:
+    GETFEEDBACK_SURVEY_ID = ''
+
+try:
+    ALL_FI_TARGET_PORT = os.environ["ALL_FI_TARGET_PORT"]
+except KeyError:
+    ALL_FI_TARGET_PORT = ''
 
 def first(items):
     for i in items:
@@ -51,7 +68,11 @@ payload = {"per_page": 100}
 r = requests.get(api_base_url + responses_url,
                  headers=headers, params=payload)
 
-responses = r.json()["active_models"]
+if r.status_code == 200:
+    responses = r.json()["active_models"]
+else:
+    print('using mocked response from GFB API')
+    responses = [{'answers': [{'type': 'MultipleChoice', 'choices': [{'text': 'hi there'}]}]}] # mocked response
 
 len(responses) # 10, cool
 
@@ -69,7 +90,7 @@ def answer_value(answer):
 
 
 
-answer_value(responses[0]["answers"][1])
+answer_value(responses[0]["answers"][0])
 
 
 
@@ -83,6 +104,8 @@ note_on_msg = mido.Message("note_on", note=60, velocity=127, channel=10)
 note_off_msg = mido.Message("note_off", note=60, velocity=127, channel=10)
 
 # open port
+outport = False
+
 if outport:
     outport.close()
 
