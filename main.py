@@ -20,10 +20,14 @@
 # pip install python-rtmidi
 # pip install mido
 #
-TARGET_PORT = 'loopMIDI Python'
 
-import mido
+import os
 import time
+import mido
+
+GETFEEDBACK_API_KEY = os.environ["GETFEEDBACK_API_KEY"]
+GETFEEDBACK_SURVEY_ID = os.environ["GETFEEDBACK_SURVEY_ID"]
+ALL_FI_TARGET_PORT = os.environ["ALL_FI_TARGET_PORT"]
 
 def first(items):
     for i in items:
@@ -34,9 +38,49 @@ def get_target_port():
         if TARGET_PORT in n:
             return n
 
+# test getting GFP API responses
+
+import requests
+
+api_base_url = "https://api.getfeedback.com"
+responses_url = f"/surveys/{GETFEEDBACK_SURVEY_ID}/responses"
+
+headers = {"authorization": f"Bearer {GETFEEDBACK_API_KEY}"}
+payload = {"per_page": 100}
+
+r = requests.get(api_base_url + responses_url,
+                 headers=headers, params=payload)
+
+responses = r.json()["active_models"]
+
+len(responses) # 10, cool
+
+responses[0]["answers"][0]
+
+def answer_value(answer):
+    # allowing multiselect because it'll be handy for instrument mixes
+    if answer["type"] == "MultipleChoice":
+        return [choice["text"] for choice in answer["choices"]]
+    elif answer["type"] == "Slider":
+        return answer["number"]
+    else:
+        # TODO: more if needed!
+        return None
+
+
+
+answer_value(responses[0]["answers"][1])
+
+
+
+# params: page, per_page, status=completed, since, until
+
+
+
+
 # example
-note_on_msg = mido.Message('note_on', note=60, velocity=127, channel=10)
-note_off_msg = mido.Message('note_off', note=60, velocity=127, channel=10)
+note_on_msg = mido.Message("note_on", note=60, velocity=127, channel=10)
+note_off_msg = mido.Message("note_off", note=60, velocity=127, channel=10)
 
 # open port
 if outport:
@@ -49,7 +93,7 @@ outport.send(note_on_msg)
 time.sleep(2)
 outport.send(note_on_msg)
 
-cc_msg = mido.Message('control_change', control=0, value=127)
+cc_msg = mido.Message("control_change", control=0, value=127)
 
 time.sleep(2)
 cc_msg = cc_msg.copy(value=0)
