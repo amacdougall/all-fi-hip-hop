@@ -11,17 +11,23 @@ try:
 except KeyError:
     sys.exit("Set the ALL_FI_TARGET_PORT env var first")
 
-if !(ALL_FI_TARGET_PORT in mido.get_output_names()):
-    sys.exit(f"MIDI port {ALL_FI_TARGET_PORT} not found")
-
+def get_target_port():
+    for n in mido.get_output_names():
+        if ALL_FI_TARGET_PORT in n:
+            return n
+    sys.exit(f"MIDI port '{ALL_FI_TARGET_PORT}' not found")
 
 control = int(sys.argv[1])
 value = int(sys.argv[2])
 
-outport = mido.open_output(ALL_FI_TARGET_PORT)
+outport = mido.open_output(get_target_port())
 
-print(f"MIDI CC: {control} => {value})
-message = mido.Message("control_change", control=control, value=value)
+print(f"MIDI CC: {control} => {value}")
+message = mido.Message(
+    "control_change",
+    control=control,
+    value=value
+)
 outport.send(message)
 
 outport.close()
