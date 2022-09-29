@@ -45,8 +45,11 @@ try:
 except KeyError:
     ALL_FI_TARGET_PORT = ''
 
-if !(ALL_FI_TARGET_PORT in mido.get_output_names()):
-    sys.exit(f"MIDI port {ALL_FI_TARGET_PORT} not found.")
+def get_target_port():
+    for n in mido.get_output_names():
+        if ALL_FI_TARGET_PORT in n:
+            return n
+    sys.exit(f"MIDI port '{ALL_FI_TARGET_PORT}' not found")
 
 # test getting GFP API responses
 
@@ -97,28 +100,46 @@ def build_value_set():
             "value": None # 0.5 Sustained; 1.0 Rhythmic
         },
         "chord_piano_amount": {
-            "control": 1,
+            "control": 5,
             "value": None # 0.0 - 0.8
         },
         "chord_strings_amount": {
-            "control": 1,
+            "control": 10,
             "value": None # 0.0 - 0.8
         },
         "chord_guitar_amount": {
-            "control": 1,
+            "control": 15,
             "value": None # 0.0 - 0.5
         },
     }
 
 values = build_value_set()
 
+# debug: just do one response
+
+response = responses[1]
+
 for answer in response["answers"]:
     question = find_question_by_answer(answer)
     print("handling question " + question["title"])
     match question["title"]:
         case "Chords: overall style":
-            # TODO
-            pass
+            match answer["choices"][0]["text"]:
+                case "Lo-fi hip-hop":
+                    values["chord_pattern_type"]["value"] = 0.5
+                    values["chord_piano_amount"]["value"] = 0.8
+                    values["chord_strings_amount"]["value"] = 0.8
+                    values["chord_guitar_amount"]["value"] = 0.0
+                case "Classic hip-hop":
+                    values["chord_pattern_type"]["value"] = 1.0
+                    values["chord_piano_amount"]["value"] = 0.8
+                    values["chord_strings_amount"]["value"] = 0.0
+                    values["chord_guitar_amount"]["value"] = 0.0
+                case "Rap-rock":
+                    values["chord_pattern_type"]["value"] = 0.0
+                    values["chord_piano_amount"]["value"] = 0.0
+                    values["chord_strings_amount"]["value"] = 0.0
+                    values["chord_guitar_amount"]["value"] = 0.5
         case "Chords: sustained or rhythmic?":
             match answer["choices"][0]["text"]:
                 case "Sustained":
@@ -135,7 +156,7 @@ for answer in response["answers"]:
                 values["chord_strings_amount"]["value"] = 0.8
             else:
                 values["chord_strings_amount"]["value"] = 0.0
-            if "Guitar" in choices:
+            if "Electric guitar" in choices:
                 values["chord_guitar_amount"]["value"] = 0.5
             else:
                 values["chord_guitar_amount"]["value"] = 0.0
@@ -148,7 +169,7 @@ outport = False
 if outport:
     outport.close()
 
-outport = mido.open_output(ALL_FI_TARGET_PORT)
+outport = mido.open_output(get_target_port())
 
 for k in values:
     if values[k]["value"] != None:
@@ -157,7 +178,7 @@ for k in values:
         message = mido.Message(
             "control_change",
             control=values[k]["control"],
-            value=values[k]["value"]
+            value=int(127 * values[k]["value"]) # to byte value
         )
         outport.send(message)
         time.sleep(1)
