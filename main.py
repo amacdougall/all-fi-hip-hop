@@ -30,7 +30,6 @@ except ModuleNotFoundError:
     print("Can't find mido so outputting to file")
     mido = MockedMido.MockedMido()
 
-
 try:
     GETFEEDBACK_API_KEY = os.environ["GETFEEDBACK_API_KEY"]
 except KeyError:
@@ -46,14 +45,8 @@ try:
 except KeyError:
     ALL_FI_TARGET_PORT = ''
 
-def first(items):
-    for i in items:
-        return i
-
-def get_target_port():
-    for n in mido.get_output_names():
-        if TARGET_PORT in n:
-            return n
+if !(ALL_FI_TARGET_PORT in mido.get_output_names()):
+    sys.exit(f"MIDI port {ALL_FI_TARGET_PORT} not found.")
 
 # test getting GFP API responses
 
@@ -61,22 +54,14 @@ import requests
 
 api_base_url = "https://api.getfeedback.com"
 responses_url = f"/surveys/{GETFEEDBACK_SURVEY_ID}/responses"
+survey_url = f"/surveys/{GETFEEDBACK_SURVEY_ID}"
 
 headers = {"authorization": f"Bearer {GETFEEDBACK_API_KEY}"}
 payload = {"per_page": 100}
 
 r = requests.get(api_base_url + responses_url,
                  headers=headers, params=payload)
-
-if r.status_code == 200:
-    responses = r.json()["active_models"]
-else:
-    print('using mocked response from GFB API')
-    responses = [{'answers': [{'type': 'MultipleChoice', 'choices': [{'text': 'hi there'}]}]}] # mocked response
-
-len(responses) # 10, cool
-
-responses[0]["answers"][0]
+responses = r.json()["active_models"]
 
 def answer_value(answer):
     # allowing multiselect because it'll be handy for instrument mixes
@@ -88,20 +73,74 @@ def answer_value(answer):
         # TODO: more if needed!
         return None
 
+# get survey data so we can find the question for each answer
+r = requests.get(api_base_url + survey_url, headers=headers)
+survey = r.json()["survey"]
+questions = survey["ordered_components"]
 
+def find_question_by_answer(a):
+    for q in questions:
+        if q["id"] == a["component_id"]:
+            return q
 
-answer_value(responses[0]["answers"][0])
+# create a set of desired values first, but then blend against the most recent
+# five values. Try to weight the most recent response more strongly, though,
+# because why not?
+#
+# Anyway, this is the master list of values. A value won't be counted if it's
+# None.
+#
+def build_value_set():
+    return {
+        "chord_pattern_type": {
+            "control": 0,
+            "value": None # 0.5 Sustained; 1.0 Rhythmic
+        },
+        "chord_piano_amount": {
+            "control": 1,
+            "value": None # 0.0 - 0.8
+        },
+        "chord_strings_amount": {
+            "control": 1,
+            "value": None # 0.0 - 0.8
+        },
+        "chord_guitar_amount": {
+            "control": 1,
+            "value": None # 0.0 - 0.5
+        },
+    }
 
+values = build_value_set()
 
+for answer in response["answers"]:
+    question = find_question_by_answer(answer)
+    print("handling question " + question["title"])
+    match question["title"]:
+        case "Chords: overall style":
+            # TODO
+            pass
+        case "Chords: sustained or rhythmic?":
+            match answer["choices"][0]["text"]:
+                case "Sustained":
+                    values["chord_pattern_type"]["value"] = 0.5
+                case "Rhythmic":
+                    values["chord_pattern_type"]["value"] = 1.0
+        case "Chords: what instruments?":
+            choices = [choice["text"] for choice in answer["choices"]]
+            if "Piano" in choices:
+                values["chord_piano_amount"]["value"] = 0.8
+            else:
+                values["chord_piano_amount"]["value"] = 0.0
+            if "Strings" in choices:
+                values["chord_strings_amount"]["value"] = 0.8
+            else:
+                values["chord_strings_amount"]["value"] = 0.0
+            if "Guitar" in choices:
+                values["chord_guitar_amount"]["value"] = 0.5
+            else:
+                values["chord_guitar_amount"]["value"] = 0.0
 
-# params: page, per_page, status=completed, since, until
-
-
-
-
-# example
-note_on_msg = mido.Message("note_on", note=60, velocity=127, channel=10)
-note_off_msg = mido.Message("note_off", note=60, velocity=127, channel=10)
+# for starters, just set these values directly on the song
 
 # open port
 outport = False
@@ -109,21 +148,19 @@ outport = False
 if outport:
     outport.close()
 
-outport = mido.open_output(get_target_port())
+outport = mido.open_output(ALL_FI_TARGET_PORT)
 
-outport.send(note_on_msg)
-
-time.sleep(2)
-outport.send(note_on_msg)
-
-cc_msg = mido.Message("control_change", control=0, value=127)
-
-time.sleep(2)
-cc_msg = cc_msg.copy(value=0)
-outport.send(cc_msg)
-time.sleep(2)
-cc_msg = cc_msg.copy(value=127)
-outport.send(cc_msg)
+for k in values:
+    if values[k]["value"] != None:
+        print(f"{k} => MIDI CC:")
+        print(f"{values[k]['control']} => {values[k]['value']}")
+        message = mido.Message(
+            "control_change",
+            control=values[k]["control"],
+            value=values[k]["value"]
+        )
+        outport.send(message)
+        time.sleep(1)
 
 # This works! Be sure to thank the creator of the loopMidi tool and the author
 # of the blog post.
